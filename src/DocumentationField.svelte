@@ -1,44 +1,90 @@
-<script lang="ts">
+<script module lang="ts">
   import Quill from "quill";
-  import { onMount, createEventDispatcher } from "svelte";
-  import { modifierKey } from "./stores";
+  import Embed from "quill/blots/embed";
+  import ImageResize from "@mgreminger/quill-image-resize-module";
 
-  export let hideToolbar = true;
-  export let quill;
+  class Formula extends Embed {
+    static blotName = 'formula';
+    static className = 'ql-formula';
+    static tagName = 'SPAN';
+
+    static create(value: string) {
+
+      const node = super.create(value) as Element;
+      node.innerHTML = String.raw`\( ${value} \)`;
+      if (typeof value === 'string') {
+        renderMathInElement(node as HTMLElement);
+        node.setAttribute('data-value', value);
+      }
+      return node;
+    }
+
+    static value(domNode: Element) {
+      return domNode.getAttribute('data-value');
+    }
+
+    html() {
+      const { formula } = this.value();
+      return `<span>${formula}</span>`;
+    }
+  }
+
+  Quill.register({
+    'formats/formula': Formula,
+    'modules/imageResize': ImageResize
+  }, true);
+
+</script>
+
+<script lang="ts">
+  import type { Delta} from "quill";
+  import { renderMathInElement } from "mathlive";
+  import { onMount } from "svelte";
+  import appState from "./stores.svelte";
+
+  interface Props {
+    hideToolbar: boolean;
+    quill: Quill;
+    shiftEnter: () => void;
+    modifierEnter: () => void;
+    update: (arg: {detail: {delta: Delta}}) => void;
+  }
+
+  let {
+    hideToolbar = true,
+    quill = $bindable(),
+    shiftEnter,
+    modifierEnter,
+    update
+  }: Props = $props();
+  
+  let editorDiv;
 
   export function setContents(newContents) {
     quill.setContents(newContents);
   }
 
-  let editorDiv;
-
-  const dispatch = createEventDispatcher<{
-    update: {json: any};
-    shiftEnter: null;
-    modifierEnter: null;
-  }>();
-
   onMount(() => {
     const bindings = {
       tab: {
-        key: 9, // dissable tab key so that tab can be used for focus
+        key: 'Tab', // dissable tab key so that tab can be used for focus
         handler: function() {
           return true;
         }
       },
       custom1: {
-        key: 13, // for shift-enter, don't do anthing here and re-dispatch event to window (otherwise quill eats the event)
+        key: 'Enter', // for shift-enter, don't do anthing here and re-dispatch event to window (otherwise quill eats the event)
         shiftKey: true,
         handler: function() {
-          dispatch('shiftEnter');
+          shiftEnter();
           return false;
         }
       },
       custom2: {
-        key: 13, // for meta-enter, don't do anthing here and re-dispatch event to window (otherwise quill eats the event)
-        [$modifierKey]: true,
+        key: 'Enter', // for meta-enter, don't do anthing here and re-dispatch event to window (otherwise quill eats the event)
+        [appState.modifierKey]: true,
         handler: function() {
-          dispatch('modifierEnter')
+          modifierEnter();
           return false;
         }
       },
@@ -49,23 +95,21 @@
         toolbar: [
           [{ header: [1, 2, 3, false] }],
           ['bold', 'italic', 'underline'],
+          [{ 'color': [] }, { 'background': [] }],
           [{list: 'ordered'}, {list: 'bullet'}],
-          ['link', 'image'],
+          ['link', 'image', 'formula'],
           ['clean']
         ], 
         keyboard: {
           bindings: bindings
         },
+        imageResize: {},
       },
       theme: 'snow'  // or 'bubble'
     });
 
-
     quill.on('text-change', (delta, oldDelta, source) => {
-      dispatch('update', {
-          json: quill.getContents()
-      });
-    
+      update({detail: {delta: quill.getContents()}});
     });
   });
 
@@ -101,7 +145,7 @@
   :global(div.wrap div.ql-toolbar) {
     transition: 0.3s;
     transition-delay: .1s;
-    max-height: 66px;
+    max-height: 99px;
     overflow: visible;
     opacity: 1;
   }
@@ -183,5 +227,5 @@
   class="wrap" 
   class:hideToolbar 
 >
-  <div class="editor" bind:this={editorDiv} />
+  <div class="editor" bind:this={editorDiv}></div>
 </div>
